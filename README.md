@@ -1,7 +1,8 @@
-# Project2 Proposal
+# Project2 Proposal 
+
 We are seeking to make a roboadvisor to help clients create a crypto currency portfolio align with their investment objectives and goals:
 
-* Roboadvisor for crypto currency portfolio: Using historical prices and other key financial metrics.   
+* Roboadvisor for crypto currency portfolio: Using historical prices and other key financial metrics.
 
 * We will be using Kraken and Coinmarketcap APIs.
 

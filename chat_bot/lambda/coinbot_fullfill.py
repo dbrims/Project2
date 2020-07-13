@@ -1,14 +1,18 @@
-### Required Libraries ###
+from botocore.vendored import requests
+import ccxt
+import os 
+from io import StringIO
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from botocore.vendored import requests
-!pip install PyPortfolioOpt
-from pypfopt.efficient_frontier import EfficientFrontier
-from pypfopt import risk_models
-from pypfopt import expected_returns
-from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
+import pandas as pd
+import numpy as np
+import boto3
+import json
 
-### Functionality Helper Functions ###
+
+
+s3 = boto3.client('s3')
+
 def parse_float(n):
     """
     Securely converts a non-numeric value to float.
@@ -16,18 +20,23 @@ def parse_float(n):
     try:
         return float(n)
     except ValueError:
-        return float("nan")
+        return "error"
     
-def risk assay(age, income, amount, risk, retire):
+
+    
+def risk_assay(bday, income, amount, risk, retire):
     '''from the clients inputs we are going to assign them a risk score high risk=2, moderate risk=2, low risk=1'''
 
     rlst=[]
+    birth_date = datetime.strptime(bday, "%Y-%m-%d")
+    age = relativedelta(datetime.now(), birth_date).years
     working_age=retire-age
     income_ratio=income/amount
     
     '''we are going to use their age and retirement age to create a risk value, closer to retirement, the higher the risk'''
+
     if working_age<17:
-        rlist.append(3)
+        rlst.append(3)
     elif working_age>=17 and working_age<34:
         rlst.append(2)
     else:
@@ -36,7 +45,7 @@ def risk assay(age, income, amount, risk, retire):
     '''we will use their income and amount to invest.  If the investment amount is a sizable chunk of their annual income
     we will say it is higher risk'''
     if income_ratio<2:
-        rlist.append(3)
+        rlst.append(3)
     elif income_ratio>=2 and income_ratio<5:
         rlst.append(2)
     else:
@@ -49,147 +58,281 @@ def risk assay(age, income, amount, risk, retire):
         rlst.append(2)
     elif risk.lower()=='low':
         rlst.append(1)
-    else:
-    """ not sure how to do an input validation... need to work on it"""
         
-    ave_risk = round(mean(rlst),0)
+    ave_risk = round(sum(rlst) / len(rlst),0)
+    
     return(ave_risk)
 
-def get_portfolio(ave_risk,df):
+
+
+def get_coins():
+    
+    '''here we read the coins csv file from the E3 drive and pass it back'''
+    bucket = 'ft-project-2'
+    key = 'Classification.csv'
+    response = s3.get_object(Bucket=bucket, Key=key)
+    csv_file=response['Body']
+    df=pd.read_csv(csv_file)
+
+
+    return(df)
+
+
+
+def get_tickers(ave_risk, coin_df):
     '''we are saying cryto class have a risk associated with them and based 
     on the risk metric for the client we are assigning them one of those risk 
     portfolios'''
     tickers=[]
     if ave_risk==1:
-        tickers=df['ticker'].loc[df['class']==x].to_list()
+        symbols=coin_df['symbol'].loc[(coin_df['class']==2)|(coin_df['class']==0)].to_list()
     elif ave_risk==2:
-        tickers=df['ticker'].loc[df['class']==x].to_list()
-    elif ave_risk==:
-        tickers=df['ticker'].loc[df['class']==x].to_list()
-        
-    return(tickers)
+        symbols=coin_df['symbol'].to_list()
+    elif ave_risk==3:
+        symbols=coin_df['symbol'].loc[(coin_df['class']==1)|(coin_df['class']==0)].to_list()
+ 
+    return(symbols)
 
-def get_portfolio(tickers):
-    '''we are taking our list of tickers and generating a dataframe of the assets'''
+
+
+def get_portfolio(symbols):
     i=0
-    for ticker in tickers:
+    exchange = ccxt.kraken({
+    'apiKey': KRAKEN_API_KEY,
+    'secret': KRAKEN_SECRET_API_KEY,
+    })
+    since = exchange.parse8601('2018-01-01T00:00:00z')
+
+    for symbol in symbols:
         if i==0:
-            ticker_df= ''' get data from API'''
-            ticker_df.set_index('column name', inplace=True)
-            ticker_df=ticker_df.drop(columns=['x','y'])
-            ticker_df.columns=[ticker]
-            i+=1
+            try:
+                data = exchange.fetchOHLCV(symbol,'1d', since, params = {})
+                header = ['Date', 'Open', 'High', 'Low', symbol, 'Volume']
+                ticker_df = pd.DataFrame(data, columns=header)
+                ticker_df['Date']=pd.to_datetime(ticker_df.Date/1000, unit='s')
+                ticker_df.set_index('Date', inplace=True)
+                ticker_df.drop(columns=['Open', 'High', 'Low', 'Volume'], inplace=True)
+                i+=1
+            except:
+                continue
         else:
-            df= ''' get data from API'''
-            df.set_index('date column name', inplace=True)
-            df=ticker_df.drop(columns=['x','y'])
-            df.columns=[ticker]
-            ticker_df=pd.concat([ticker_df, df], axis=1, join='inner')
-        return(ticker_df)
-    
-def eff_frontier(ticker_df):
-    '''using the pyportfolioopt package in python, we will optimize the weights for the portforlio and give the current annual return, sharpe ratio and volatility'''
-    mu = expected_returns.mean_historical_return(df)
-    S = risk_models.sample_cov(df)
-    ef = EfficientFrontier(mu, S)
-    weights = ef.max_sharpe()
-    cleaned_weights = ef.clean_weights() 
-    performance=ef.portfolio_performance(verbose=True)
-    return(cleaned_weights, performance)
+            try:
+                data = exchange.fetchOHLCV(symbol,'1d', since, params = {})
+                header = ['Date', 'Open', 'High', 'Low', symbol, 'Volume']
+                df = pd.DataFrame(data, columns=header)
+                df['Date']=pd.to_datetime(df.Date/1000, unit='s')
+                df.set_index('Date', inplace=True)
+                df.drop(columns=['Open', 'High', 'Low', 'Volume'], inplace=True)
+                ticker_df=pd.concat([ticker_df, df], axis=1, join='inner')
+            except:
+                continue
 
-def allocation(df, cleaned_weights, amount):
-    '''using the weights we created we will allocate the clients investment, giving them 
-    how many coins to buy and what the value of those coins would be (as well as any 
-    left over cash in their account)'''
+    return(ticker_df)
+
+
     
-    portfolio={}
-    latest_prices = get_latest_prices(df)
-    weights = cleaned_weights 
-    da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=amount)
-    allocation, leftover = da.lp_portfolio()
-    tickers=allocation.keys()
-    for col in range(len(tickers)):
-        price=df.iloc[-1,col]
-        portfolio[ticker[col]]['shares']=allocation[tickers[col]]
-        portfolio[ticker[col]]['value']=allocation[tickers[col]]*price
+    
+def make_data_df(coin_df, tickers_df, asset_returns, symbols):
+    tickers=tickers_df.columns.tolist()
+    data_df=pd.DataFrame()
+    data_df['tickers']=tickers
+    data_df['returns']=asset_returns
+    data_df.set_index('tickers', inplace=True)
+    data_df['mrkcap']=0
+    data_df['price']=0
+
+    clean_tickers, data_df=fill_data_df(coin_df, data_df, tickers_df, tickers)
+    tickers_df=prune_tickers_df(tickers,clean_tickers, tickers_df)
+    return(clean_tickers, data_df, tickers_df)
+
+
+def fill_data_df(coin_df,data_df, tickers_df, tickers):
+    last_price=tickers_df.iloc[-1,:]
+    for ticker in tickers:
+        data_df.loc[ticker,'mrkcap']=coin_df.loc[ticker,'Market_Cap']
+        data_df.loc[ticker,'price']=last_price.loc[ticker]
+    data_df.dropna(inplace=True)
+    clean_tickers=data_df.index.to_list()
         
-    return(portfolio, leftover)
+    return(clean_tickers, data_df)
 
-def make_output (portfolio, leftover, amount, performance):
+def prune_tickers_df(tickers_old, tickers_new, tickers_df):
+    for ticker in tickers_old:
+        if ticker not in tickers_new:
+            tickers_df.drop([ticker], axis=1, inplace=True)
+    return(tickers_df)
+
+def make_port_df(weights_df, clean_tickers, data_df, tickers_df, amount):
+    port_df=weights_df.loc[weights_df[0]>0]
+    port_df=port_df/port_df[0].sum()
+    port_df.columns=['weights']
+    port_df['price']=0
+    port_df['returns']=0
+    port_df['shares']=0
+    port_df['value']=0
+
+    
+    return (fill_port_df(clean_tickers, port_df, data_df, tickers_df,amount))
+
+
+
+    
+def fill_port_df(clean_tickers, port_df, data_df, tickers_df,amount):
+
+    port_tickers=port_df.index.to_list()
+    tickers_df=prune_tickers_df(clean_tickers, port_tickers, tickers_df)
+    last_price=tickers_df.iloc[-1,:]
+    last_price.columns=['price']
+    for ticker in port_tickers:
+        port_df.loc[ticker,'price']=last_price.loc[ticker]
+        port_df.loc[ticker,'returns']=data_df.loc[ticker,'returns']
+        port_df.loc[ticker,'shares']=(amount*port_df.loc[ticker, 'weights']//port_df.loc[ticker, 'price'])
+        port_df.loc[ticker,'value']=(port_df.loc[ticker, 'shares']*port_df.loc[ticker, 'price'])  
+    left=amount-port_df['value'].sum()
+    
+    return(left, port_df, port_tickers)
+
+
+def make_port_metrics(port_df, tickers_df):
+    wts=port_df['weights'].to_list()
+    wts=np.asarray(wts)
+    port_ret=tickers_df.pct_change()
+    port_ret.dropna(inplace=True)
+    port_ret['return']=port_ret.mul(wts,axis=1).sum(axis=1)
+    ann_ret=port_ret['return'].mean()* 252-.0062
+    
+    cov_matrix = port_ret.iloc[:,0:-1].cov()
+    ann_port_std=round(((np.sqrt(np.dot(wts.T,np.dot(cov_matrix, wts)))* np.sqrt(252))),6)
+    sharpe=ann_ret/ann_port_std
+    
+    metrics=[ann_ret, sharpe, ann_port_std]
+    
+    
+    return (metrics)
+    
+
+
+
+
+'''This block of code is the Black Litterman portfolio functions, thy pyprotfolioopt, library I wanted to use would not compile on EC2.
+this code was derived from https://github.com/overney/python/blob/master/Black%20Litterman%20Model.ipynb, and does not have the optimization 
+that the other library achieved, this also discusses BL https://python-advanced.quantecon.org/black_litterman.html'''
+
+def in_return_cov(df): 
+    '''calculating the annual returns for each assset and generating a covariance matrix of the returns'''
+    price = df.pct_change()
+    price.iloc[0,:] = 0    
+    
+    returns = np.matrix(price)
+    mean_returns = np.mean(returns, axis = 0)
+    
+    annual_returns = np.array([])
+    for i in range(len(np.transpose(mean_returns))):
+        annual_returns = np.append(annual_returns,(mean_returns[0,i]+1)**252-1)   
+    
+    cov = price.cov()*252
+    
+    return (annual_returns, np.matrix(cov))
+
+
+def port_return(W,r):
+    return sum(W*r)
+
+
+def mkt_weights(weights):
+    return np.array(weights) / sum(weights)
+
+def risk_return(W,S,r,rf=0.0063):
+    var = np.dot(np.dot(W,S),np.transpose(W))
+    port_r = port_return(W,r)
+    return np.ndarray.item((port_r - rf) / var)
+
+def vector_equilibrium_return(S, W, r ):
+    
+    A = risk_return(W,S,r)
+    
+    return (np.dot(A,np.dot(S,W)))
+
+def diago_omega(t, P, S):
+    
+    omega = np.dot(t,np.dot(P,np.dot(S,np.transpose(P))))
+    
+    for i in range(len(omega)):
+        for y in range(len(omega)):
+            if i != y: omega[i,y] = 0
+    return omega
+
+def make_view_matrix(clean_tickers, data_df):
+    N=len(clean_tickers)
+    Q = np.zeros((N,1))
+    P = np.zeros((N,N))
+    for n in range(len(clean_tickers)):
+        P[n,n]=1
+        Q[n,0]=data_df.iloc[n,0]
+    return(P, Q)
+    
+def posterior_estimate_return(t,S,P,Q,PI):
+    
+    omega = diago_omega(t, P, S)
+    
+    parte_1 = t*np.dot(S,np.transpose(P))
+    parte_2 = np.linalg.inv(np.dot(P*t,np.dot(S,np.transpose(P))) + omega)
+    parte_3 = Q - np.dot(P,np.transpose(PI))
+    
+    return np.transpose(PI) + np.dot(parte_1,np.dot(parte_2,parte_3))
+
+def posterior_covariance(t,S,P,PI):
+    
+    omega = diago_omega(t, P, S)
+    
+    parte_1 = t*np.dot(S,np.transpose(P))
+    parte_2 = np.linalg.inv(t*np.dot(P,np.dot(S,np.transpose(P)))+omega)
+    parte_3 = t*np.dot(P,S)
+
+    return t*S - np.dot(parte_1,np.dot(parte_2,parte_3))
+
+
+
+
+'''Here we package the lambda functions response and send it back to the client'''
+
+def make_output (port_df, left, amount, metrics, port_tickers):
+    '''Here we are making the text output for the chatbot, it will give all the metrics for the optimized portfolio'''
     port_str=''
-    for key in portfolio:
-        str=f' {portfolio[key]["shares"]} shares of {portfolio[key]["shares"]} worth {portfolio[key]["value"]},'
+
+    for ticker in port_tickers:
+        str=(f' {int(port_df.loc[ticker, "shares"])} shares of {ticker} worth ${port_df.loc[ticker,"value"]:.2f},\n')
         port_str=port_str+str
-        
-    out_str=f'For your {amount} investment, we have calculated the most afficient portfolio for your level of risk\n
-    will be {port_str[:-1]} and you will have ${leftover} leftover.  This portfolio has a current annualized return of\n
-    {performance[0]*100:.2}%, voluntility of {performance[1]:.2}, and a sharp raio of {performance[2]:.2}'
+
+    out_str=(f'''For your ${amount} investment, we have calculated the most afficient portfolio for your level of risk will be
+    {port_str[:-3]} 
+    and you will have ${left:.2f} leftover.
+    This portfolio has a current annualized return of {metrics[0]*100:.2f}%, voluntility of {metrics[2]:.2f}, and a sharp raio of {metrics[1]:.2f}''')
+    
     return(out_str)
-    
-        
-    
-            
-
-def get_btcprice():
-    """
-    Retrieves the current price of bitcoin in US Dollars from the alternative.me Crypto API.
-    """
-    bitcoin_api_url = "https://api.alternative.me/v2/ticker/bitcoin/?convert=USD"
-    response = requests.get(bitcoin_api_url)
-    response_json = response.json()
-    price_usd = parse_float(response_json["data"]["1"]["quotes"]["USD"]["price"])
-    return price_usd
 
 
-def build_validation_result(is_valid, violated_slot, message_content):
-    """
-    Defines an internal validation message structured as a python dictionary.
-    """
-    if message_content is None:
-        return {"isValid": is_valid, "violatedSlot": violated_slot}
 
-    return {
-        "isValid": is_valid,
-        "violatedSlot": violated_slot,
-        "message": {"contentType": "PlainText", "content": message_content},
+def close(session_attributes, fulfillment_state, message):
+    '''this packages up the full JSON response back to the chatbot'''
+    response = {
+        'sessionAttributes': session_attributes,
+        'dialogAction': {
+            'type': 'Close',
+            'fulfillmentState': fulfillment_state,
+            "message": {
+                "contentType": "PlainText",
+                "content": message 
+                
+            },
+        }
     }
+    return response
 
 
-def validate_data(birthday, usd_amount, intent_request):
-    """
-    Validates the data provided by the user.
-    """
-
-    # Validate that the user is over 21 years old
-    if birthday is not None:
-        birth_date = datetime.strptime(birthday, "%Y-%m-%d")
-        age = relativedelta(datetime.now(), birth_date).years
-        if age < 21:
-            return build_validation_result(
-                False,
-                "birthday",
-                "You need to be at least 21 years old to use this service, "
-                "please come back when you are old enough.",
-            )
-
-    # Validate the investment amount, it should be > 0
-    if usd_amount is not None:
-        usd_amount = parse_float(
-            usd_amount
-        )  # Since parameters are strings it's important to cast values
-        if usd_amount <= 0:
-            return build_validation_result(
-                False,
-                "usdAmount",
-                "The amount to convert should be greater than zero, "
-                "please provide a correct amount in USD to convert.",
-            )
-
-    # A True results is returned if age or amount are valid
-    return build_validation_result(True, None, None)
 
 
-### Dialog Actions Helper Functions ###
+
 def get_slots(intent_request):
     """
     Fetch all the slots and their values from the current intent.
@@ -197,110 +340,58 @@ def get_slots(intent_request):
     return intent_request["currentIntent"]["slots"]
 
 
-def elicit_slot(session_attributes, intent_name, slots, slot_to_elicit, message):
-    """
-    Defines an elicit slot type response.
-    """
-
-    return {
-        "sessionAttributes": session_attributes,
-        "dialogAction": {
-            "type": "ElicitSlot",
-            "intentName": intent_name,
-            "slots": slots,
-            "slotToElicit": slot_to_elicit,
-            "message": message,
-        },
-    }
-
-
-def delegate(session_attributes, slots):
-    """
-    Defines a delegate slot type response.
-    """
-
-    return {
-        "sessionAttributes": session_attributes,
-        "dialogAction": {"type": "Delegate", "slots": slots},
-    }
-
-
-def close(session_attributes, fulfillment_state, message):
-    """
-    Defines a close slot type response.
-    """
-
-    response = {
-        "sessionAttributes": session_attributes,
-        "dialogAction": {
-            "type": "Close",
-            "fulfillmentState": fulfillment_state,
-            "message": message,
-        },
-    }
-
-    return response
-
 
 ### Intents Handlers ###
-def convert_usd(intent_request):
+def make_portfolio(intent_request):
     """
-    Performs dialog management and fulfillment for recommending a portfolio.
+    Performs fulfillment for recommending a portfolio.
     """
 
-    # Gets slots' values
-    birthday = get_slots(intent_request)["birthday"]
-    usd_amount = get_slots(intent_request)["usdAmount"]
+    '''Unpack the inputs from the chatbot'''
+    bday = get_slots(intent_request)["bday"]
+    amount = parse_float(get_slots(intent_request)["amount"])
+    retire =parse_float( get_slots(intent_request)["retire"])
+    risk = get_slots(intent_request)["risk"]
+    income =parse_float(get_slots(intent_request)["income"])
+    
+    
+    '''we will assess the clients risk adversion pull the csv for the crypto dataframe,
+    create their portfolio, and optimize it'''
+    client_risk=risk_assay(bday, income, amount, risk, retire)
+    coin_df=get_coins()
+    symbols=get_tickers(client_risk, coin_df)
+    coin_df.set_index('symbol', inplace=True)
+    tickers_df=get_portfolio(symbols)
+    tickers=tickers_df.columns.to_list()
 
-    # Gets the invocation source, for Lex dialogs "DialogCodeHook" is expected.
-    source = intent_request["invocationSource"]  #
+    
+    
+    '''Here we start the Black Litterman model, It needs better optimization'''
+    asset_returns , S= in_return_cov(tickers_df)
+    clean_tickers, data_df, tickers_df=make_data_df(coin_df, tickers_df, asset_returns, tickers)
+    asset_returns , S= in_return_cov(tickers_df)
+    W = mkt_weights(data_df['mrkcap'])
+    A = risk_return(W,S,data_df['returns'])
+    PI = vector_equilibrium_return(S, W, data_df['returns'])
+    P, Q=make_view_matrix(clean_tickers, data_df)
+    t = 1 / len(tickers_df)
+    expc_return = posterior_estimate_return(t,S,P,Q,PI)
+    post_cov = posterior_covariance(t,S,P,PI)
+    cov_post_estimate = post_cov + S
+    new_weight = np.dot(np.transpose(expc_return),np.linalg.inv(A*cov_post_estimate))
+    weights_df=pd.DataFrame(new_weight, columns = clean_tickers).T
+    
+    
+    
+    '''using the weights we will allocate their investment'''
+    left, port_df, port_tickers=make_port_df(weights_df, clean_tickers, data_df, tickers_df, amount)
+    metrics=make_port_metrics(port_df, tickers_df)
+    output_message=make_output(port_df, left, amount, metrics, port_tickers)
+    
+    
+    return close(intent_request["sessionAttributes"], "Fulfilled", output_message)
 
-    if source == "DialogCodeHook":
-        # This code performs basic validation on the supplied input slots.
 
-        # Gets all the slots
-        slots = get_slots(intent_request)
-
-        # Validates user's input using the validate_data function
-        validation_result = validate_data(birthday, usd_amount, intent_request)
-
-        # If the data provided by the user is not valid,
-        # the elicitSlot dialog action is used to re-prompt for the first violation detected.
-        if not validation_result["isValid"]:
-            slots[validation_result["violatedSlot"]] = None  # Cleans invalid slot
-
-            # Returns an elicitSlot dialog to request new data for the invalid slot
-            return elicit_slot(
-                intent_request["sessionAttributes"],
-                intent_request["currentIntent"]["name"],
-                slots,
-                validation_result["violatedSlot"],
-                validation_result["message"],
-            )
-
-        # Fetch current session attributes
-        output_session_attributes = intent_request["sessionAttributes"]
-
-        # Once all slots are valid, a delegate dialog is returned to Lex to choose the next course of action.
-        return delegate(output_session_attributes, get_slots(intent_request))
-
-    # Get the current price of BTC in USD and make the conversion from USD to BTC.
-    btc_value = parse_float(usd_amount) / get_btcprice()
-    btc_value = round(btc_value, 2)
-
-    # Return a message with conversion's result.
-    return close(
-        intent_request["sessionAttributes"],
-        "Fulfilled",
-        {
-            "contentType": "PlainText",
-            "content": """Thank you for your information;
-            you can get {} Bitcoins for your {} US Dollars.
-            """.format(
-                btc_value, usd_amount
-            ),
-        },
-    )
 
 
 ### Intents Dispatcher ###
@@ -313,8 +404,8 @@ def dispatch(intent_request):
     intent_name = intent_request["currentIntent"]["name"]
 
     # Dispatch to bot's intent handlers
-    if intent_name == "ConvertUSD":
-        return convert_usd(intent_request)
+    if intent_name == "coinBot_test":
+        return make_portfolio(intent_request)
 
     raise Exception("Intent with name " + intent_name + " not supported")
 

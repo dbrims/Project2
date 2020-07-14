@@ -1,4 +1,4 @@
-from botocore.vendored import requests
+# from botocore.vendored import requests
 import ccxt
 import os 
 from io import StringIO
@@ -6,16 +6,45 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
 import numpy as np
-import boto3
+# import boto3
 import json
+# import scipy.optimize as sco
 from pathlib import Path
 
+public_key=os.getenv('KRAKEN_API_KEY')
+secret_key=os.getenv('KRAKEN_SECRET_API_KEY')
 
-public_key=os.environ.get(KRAKEN_API_KEY)
-secret_key=os.environ.get(KRAKEN_SECRET_API_KEY)
+
+# s3 = boto3.client('s3')
+
+'''using this sample Lex intest request. the lambda function code can be 
+tested on my local computer, so that we do not pay for all those milliseconds
+'''
+intent_request={
+  "messageVersion": "1.0",
+  "invocationSource": "DialogCodeHook",
+  "userId": "John",
+  "sessionAttributes": {},
+  "bot": {
+    "name": "coinBot",
+    "alias": "$LATEST",
+    "version": "$LATEST"
+  },
+  "outputDialogMode": "Text",
+  "currentIntent": {
+    "name": "coinBot",
+    "slots": {
+      "retire": "90",
+      "income": "10000000",
+      "risk": "low",
+      "bday": "1980-11-08",
+      "amount": "1000000"
+    },
+    "confirmationStatus": "None"
+  }
+}
 
 
-s3 = boto3.client('s3')
 
 
 ###############################
@@ -48,13 +77,13 @@ def get_coins():
     '''here we read the coins csv file from the E3 drive and pass it back
     you will have to update the bucket name with what you named your 
     bucket'''
-    bucket = 'ft-project-2'
-    key = 'Classification.csv'
-    response = s3.get_object(Bucket=bucket, Key=key)
-    csv_file=response['Body']
-    df=pd.read_csv(csv_file)
-#     data=Path('Classification.csv')
-#     cdf=pd.read_csv(data)
+#     bucket = 'ft-project-2'
+#     key = 'Classification.csv'
+#     response = s3.get_object(Bucket=bucket, Key=key)
+#     csv_file=response['Body']
+#     cdf=pd.read_csv(csv_file)
+    data=Path('Classification.csv')
+    cdf=pd.read_csv(data)
 
     return(cdf)
 
@@ -63,8 +92,8 @@ def get_coins():
 def get_portfolio(symbols):
     i=0
     exchange = ccxt.kraken({
-    'apiKey': KRAKEN_API_KEY,
-    'secret': KRAKEN_SECRET_API_KEY,
+    'apiKey': public_key,
+    'secret': secret_key,
     })
     since = exchange.parse8601('2018-01-01T00:00:00z')
 
@@ -133,7 +162,7 @@ def risk_assay(bday, income, amount, risk, retire):
         
     '''we will use their explicitly stated risk as an input also,  if they entered giberish, we will ask them for clarification'''
     if risk.lower()=='high':
-        rlist.append(3)
+        rlst.append(3)
     elif risk.lower()=='high':
         rlst.append(2)
     elif risk.lower()=='low':
@@ -200,26 +229,29 @@ def prune_tickers_df(tickers_old, tickers_new, tickers_df):
     return(tickers_df)
 
 
-def update_data_df(expc_return, min_vol, clean_tickers, data_df, amount):
-    data_df['opt_wt']=0
-    data_df['exp_return']=0
-    data_df['shares']=0
-    data_df['value']=0
+def make_port_df(expc_return, new_weights, clean_tickers, data_df, amount):
+    port_df=pd.DataFrame(new_weights, columns = clean_tickers).T
+    port_df.columns=['wts']
+    port_df=port_df.where(port_df > 0, 0)
+    port_df['wts']=port_df['wts']/(port_df['wts'].sum())
+    port_df['exp_return']=0
+    port_df['shares']=0
+    port_df['value']=0
     
-    return (data_df_add(expc_return, min_vol, clean_tickers, data_df, amount))
+    return (fill_port_df(expc_return, port_df, clean_tickers, data_df, amount))
 
 
     
-def data_df_add(expc_return, min_vol, clean_tickers, data_df, amount):
-    data_df['exp_return']=expc_return
-    data_df['opt_wt']=min_vol['x']
-    data_df['port_ret']=data_df['exp_return']*data_df['opt_wt']
+def fill_port_df(expc_return, port_df, clean_tickers, data_df, amount):
+    port_df['price']=data_df['price']
+    port_df['exp_return']=expc_return
+    port_df['port_ret']=port_df['exp_return']*port_df['wts']
     for ticker in clean_tickers:
-        data_df.loc[ticker,'shares']=(amount*data_df.loc[ticker, 'opt_wt']//data_df.loc[ticker, 'price'])
-        data_df.loc[ticker,'value']=(data_df.loc[ticker, 'shares']*data_df.loc[ticker, 'price'])  
-    left=amount-data_df['value'].sum()
+        port_df.loc[ticker,'shares']=(amount*port_df.loc[ticker, 'wts']//port_df.loc[ticker, 'price'])
+        port_df.loc[ticker,'value']=(port_df.loc[ticker, 'shares']*port_df.loc[ticker, 'price'])  
+    left=amount-port_df['value'].sum()
     
-    return(left, data_df)
+    return(left, port_df)
     
 
 ####################
@@ -332,31 +364,32 @@ def posterior_covariance(t,S,P,PI,omega):
 '''in this section I am optimizing the results of the black litterman porfolio to create the final weights
 I am also generating the metrics used to feed back to the client'''
 
-'''optimizing the weights of the protfolio by mean variance optimization. following this 
+'''I wanted to optimize tthe portfolio using either mean variance optimization or max sharp.  I hit the size limit 
+and the scipy layer with too big to fit alongside the pandas and CCXT libraries.  The following was going to be the  
 methodology https://towardsdatascience.com/efficient-frontier-portfolio-optimisation-in-python-e7844051e7f'''
-def portfolio_annualised_performance(W, expc_return, cov_post_estimate):
-    returns = np.sum(expc_return*W )
-    std = np.sqrt(np.dot(W, np.dot(cov_post_estimate, W).T))
-    return std, returns
+# def portfolio_annualised_performance(W, expc_return, cov_post_estimate):
+#     returns = np.sum(expc_return*W )
+#     std = np.sqrt(np.dot(W, np.dot(cov_post_estimate, W).T))
+#     return std, returns
 
-def portfolio_volatility(W, expc_return, cov_post_estimate):
-    return portfolio_annualised_performance(W, expc_return, cov_post_estimate)[0]
+# def portfolio_volatility(W, expc_return, cov_post_estimate):
+#     return portfolio_annualised_performance(W, expc_return, cov_post_estimate)[0]
 
-def min_variance(expc_return, cov_post_estimate):
-    num_assets = len(expc_return)
-    args = (expc_return, cov_post_estimate)
-    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-    bound = (0.0,1.0)
-    bounds = tuple(bound for asset in range(num_assets))
+# def min_variance(expc_return, cov_post_estimate):
+#     num_assets = len(expc_return)
+#     args = (expc_return, cov_post_estimate)
+#     constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+#     bound = (0.0,1.0)
+#     bounds = tuple(bound for asset in range(num_assets))
 
-    result = sco.minimize(portfolio_volatility, num_assets*[1./num_assets,], args=args,
-                        method='SLSQP', bounds=bounds, constraints=constraints)
-    return result
+#     result = sco.minimize(portfolio_volatility, num_assets*[1./num_assets,], args=args,
+#                         method='SLSQP', bounds=bounds, constraints=constraints)
+#     return result
 
 
-def make_port_metrics(data_df, cov_post_estimate):
-    ret=data_df['port_ret'].sum()
-    std=(np.sqrt(np.dot(data_df['opt_wt'],np.dot(cov_post_estimate, data_df['opt_wt']).T))).tolist()
+def make_port_metrics(port_df, cov_post_estimate):
+    ret=port_df['port_ret'].sum()
+    std=(np.sqrt(np.dot(port_df['wts'],np.dot(cov_post_estimate, port_df['wts']).T))).tolist()
     sharpe=ret/std
     p_std=round(std[0][0],6)
     p_sharpe=round(sharpe[0][0],6)
@@ -374,13 +407,13 @@ to the client, to fulfill the request'''
 
 '''Here we package the lambda functions response and send it back to the client'''
 
-def make_output (port_df, left, amount, metrics, port_tickers):
+def make_output (print_df, left, amount, metrics, print_tickers):
     '''Here we are making the text output for the chatbot, it will give all the metrics for the optimized portfolio'''
     port_str=''
     
-    if len(port_tickers)>0:
-        for ticker in port_tickers:
-            str=(f' {int(port_df.loc[ticker, "shares"])} shares of {ticker} worth ${port_df.loc[ticker,"value"]:.2f},\n')
+    if len(print_tickers)>0:
+        for ticker in print_tickers:
+            str=(f' {int(print_df.loc[ticker, "shares"])} shares of {ticker} worth ${print_df.loc[ticker,"value"]:.2f},\n')
             port_str=port_str+str
 
         out_str=(f'''For your ${amount} investment, we have calculated the most afficient portfolio for your level of risk will be
@@ -420,82 +453,84 @@ funciton above'''
 
 
 ### Intents Handlers ###
-def make_portfolio(intent_request):
-    """
-    Performs fulfillment for recommending a portfolio.
-    """
+"""
+Performs fulfillment for recommending a portfolio.
+"""
 
-    '''Unpack the inputs from the chatbot'''
-    bday = get_slots(intent_request)["bday"]
-    amount = parse_float(get_slots(intent_request)["amount"])
-    retire =parse_float( get_slots(intent_request)["retire"])
-    risk = get_slots(intent_request)["risk"]
-    income =parse_float(get_slots(intent_request)["income"])
-    
-    
-    '''we will assess the clients risk adversion pull the csv for the crypto dataframe,
-    create their portfolio, and optimize it'''
-    client_risk=risk_assay(bday, income, amount, risk, retire)
-    coin_df=get_coins()
-    symbols=get_tickers(client_risk, coin_df)
-    coin_df.set_index('symbol', inplace=True)
-    tickers_df=get_portfolio(symbols)
-    tickers=tickers_df.columns.to_list()
+'''Unpack the inputs from the chatbot'''
+bday = get_slots(intent_request)["bday"]
+amount = parse_float(get_slots(intent_request)["amount"])
+retire =parse_float( get_slots(intent_request)["retire"])
+risk = get_slots(intent_request)["risk"]
+income =parse_float(get_slots(intent_request)["income"])
 
-    
-    
-    '''Here we start the Black Litterman model, It needs better optimization'''
-    asset_returns , S= in_return_cov(tickers_df)
-    clean_tickers, data_df, tickers_df=make_data_df(coin_df, tickers_df, asset_returns, tickers)
-    asset_returns , S= in_return_cov(tickers_df)  #realigning the dim of S and the portfolio
-    W = mkt_weights(data_df['mrkcap'])
-    A = risk_return(W,S,data_df['returns'])
-    PI = vector_equilibrium_return(S, W, data_df['returns'])
-    P, Q=make_view_matrix(clean_tickers, data_df)
-    t = 1 / len(tickers_df)
-    omega=my_omega(data_df, clean_tickers)
-    expc_return = posterior_estimate_return(t,S,P,Q,PI,omega)
-    post_cov = posterior_covariance(t,S,P,PI,omega)
-    cov_post_estimate = post_cov + S
-    
-    
-    
-    '''Here we do the portfolio optimization and package the metrics'''
-    min_vol = min_variance(expc_return, cov_post_estimate)
-    left, data_df =update_data_df(expc_return, min_vol, clean_tickers, data_df, amount)
-    metrics=make_port_metrics(data_df, cov_post_estimate)
-    port_df=data_df.loc[data_df['shares']>0]
-    port_tickers=port_df.index.to_list()
 
-    '''Generating the output and shipping it back to the client, FULFILLED'''
-    output_message=make_output(port_df, left, amount, metrics, port_tickers)
-    
-    return close(intent_request["sessionAttributes"], "Fulfilled", output_message)
+'''we will assess the clients risk adversion pull the csv for the crypto dataframe,
+create their portfolio, and optimize it'''
+client_risk=risk_assay(bday, income, amount, risk, retire)
+coin_df=get_coins()
+symbols=get_tickers(client_risk, coin_df)
+coin_df.set_index('symbol', inplace=True)
+tickers_df=get_portfolio(symbols)
+tickers=tickers_df.columns.to_list()
+
+
+
+'''Here we start the Black Litterman model, It needs better optimization'''
+asset_returns , S= in_return_cov(tickers_df)
+clean_tickers, data_df, tickers_df=make_data_df(coin_df, tickers_df, asset_returns, tickers)
+asset_returns , S= in_return_cov(tickers_df)  #realigning the dim of S and the portfolio
+W = mkt_weights(data_df['mrkcap'])
+A = risk_return(W,S,data_df['returns'])
+PI = vector_equilibrium_return(S, W, data_df['returns'])
+P, Q=make_view_matrix(clean_tickers, data_df)
+t = 1 / len(tickers_df)
+omega=my_omega(data_df, clean_tickers)
+expc_return = posterior_estimate_return(t,S,P,Q,PI,omega)
+post_cov = posterior_covariance(t,S,P,PI,omega)
+cov_post_estimate = post_cov + S
+
+
+
+'''Here we do the portfolio optimization and package the metrics'''
+# min_opt=min_variance(expc_return, cov_post_estimate)
+new_weights = np.dot(np.transpose(expc_return),np.linalg.inv(A*cov_post_estimate))
+left, port_df =make_port_df(expc_return, new_weights, clean_tickers, data_df, amount)
+metrics=make_port_metrics(port_df, cov_post_estimate)
+print_df=port_df.loc[port_df['shares']>0]
+print_tickers=print_df.index.to_list()
+
+'''Generating the output and shipping it back to the client, FULFILLED'''
+output_message=make_output(print_df, left, amount, metrics, print_tickers)
+
+print(output_message)
+
+Lambda_response=close(intent_request["sessionAttributes"], "Fulfilled", output_message)
 
 
 
 
 ### Intents Dispatcher ###
-def dispatch(intent_request):
-    """
-    Called when the user specifies an intent for this bot.
-    """
+# def dispatch(intent_request):
+#     """
+#     Called when the user specifies an intent for this bot.
+#     """
 
-    # Get the name of the current intent
-    intent_name = intent_request["currentIntent"]["name"]
+#     # Get the name of the current intent
+#     intent_name = intent_request["currentIntent"]["name"]
 
-    # Dispatch to bot's intent handlers
-    if intent_name == "coinBot_test":
-        return make_portfolio(intent_request)
+#     # Dispatch to bot's intent handlers
+#     if intent_name == "coinBot_test":
+#         return make_portfolio(intent_request)
 
-    raise Exception("Intent with name " + intent_name + " not supported")
+#     raise Exception("Intent with name " + intent_name + " not supported")
 
 
-### Main Handler ###
-def lambda_handler(event, context):
-    """
-    Route the incoming request based on intent.
-    The JSON body of the request is provided in the event slot.
-    """
+# ### Main Handler ###
+# def lambda_handler(event, context):
+#     """
+#     Route the incoming request based on intent.
+#     The JSON body of the request is provided in the event slot.
+#     """
 
-    return dispatch(event)
+#     return dispatch(event)

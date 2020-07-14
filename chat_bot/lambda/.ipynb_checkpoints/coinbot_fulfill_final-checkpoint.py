@@ -335,8 +335,9 @@ def posterior_covariance(t,S,P,PI,omega):
 I am also generating the metrics used to feed back to the client'''
 
 '''I wanted to optimize tthe portfolio using either mean variance optimization or max sharp.  I hit the size limit 
-and the scipy layer with too big to fit alongside the pandas and CCXT libraries.  The following was going to be the  
-methodology https://towardsdatascience.com/efficient-frontier-portfolio-optimisation-in-python-e7844051e7f'''
+and the scipy layer was too big to fit alongside the pandas and CCXT libraries.  The following was going to be the  
+methodology, i am leaving it in the code in case I figure out how to over come the size limit (maybe drop overlapping
+dependencies from Pandas and recompile it?) https://towardsdatascience.com/efficient-frontier-portfolio-optimisation-in-python-e7844051e7f'''
 # def portfolio_annualised_performance(W, expc_return, cov_post_estimate):
 #     returns = np.sum(expc_return*W )
 #     std = np.sqrt(np.dot(W, np.dot(cov_post_estimate, W).T))

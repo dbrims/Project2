@@ -220,7 +220,7 @@ def dispatch(intent_request):
     intent_name = intent_request["currentIntent"]["name"]
 
     # Dispatch to bot's intent handlers
-    if intent_name == "coinBot":
+    if intent_name == "coinBot_test":
         return validating(intent_request)
 
     raise Exception("Intent with name " + intent_name + " not supported")

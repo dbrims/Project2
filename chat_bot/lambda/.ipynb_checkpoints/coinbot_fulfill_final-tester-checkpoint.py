@@ -1,4 +1,4 @@
-from botocore.vendored import requests
+# from botocore.vendored import requests
 import ccxt
 import os 
 from io import StringIO
@@ -6,15 +6,45 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
 import numpy as np
-import boto3
+# import boto3
 import json
+# import scipy.optimize as sco
 from pathlib import Path
 
 public_key=os.getenv('KRAKEN_API_KEY')
 secret_key=os.getenv('KRAKEN_SECRET_API_KEY')
 
 
-s3 = boto3.client('s3')
+# s3 = boto3.client('s3')
+
+'''using this sample Lex intest request. the lambda function code can be 
+tested on my local computer, so that we do not pay for all those milliseconds
+'''
+intent_request={
+  "messageVersion": "1.0",
+  "invocationSource": "DialogCodeHook",
+  "userId": "John",
+  "sessionAttributes": {},
+  "bot": {
+    "name": "coinBot",
+    "alias": "$LATEST",
+    "version": "$LATEST"
+  },
+  "outputDialogMode": "Text",
+  "currentIntent": {
+    "name": "coinBot",
+    "slots": {
+      "retire": "90",
+      "income": "10000000",
+      "risk": "low",
+      "bday": "1980-11-08",
+      "amount": "1000000"
+    },
+    "confirmationStatus": "None"
+  }
+}
+
+
 
 
 ###############################
@@ -47,13 +77,13 @@ def get_coins():
     '''here we read the coins csv file from the E3 drive and pass it back
     you will have to update the bucket name with what you named your 
     bucket'''
-    bucket = 'ft-project-2'
-    key = 'Classification.csv'
-    response = s3.get_object(Bucket=bucket, Key=key)
-    csv_file=response['Body']
-    cdf=pd.read_csv(csv_file)
-#     data=Path('Classification.csv')
-#     cdf=pd.read_csv(data)
+#     bucket = 'ft-project-2'
+#     key = 'Classification.csv'
+#     response = s3.get_object(Bucket=bucket, Key=key)
+#     csv_file=response['Body']
+#     cdf=pd.read_csv(csv_file)
+    data=Path('Classification.csv')
+    cdf=pd.read_csv(data)
 
     return(cdf)
 
@@ -335,9 +365,8 @@ def posterior_covariance(t,S,P,PI,omega):
 I am also generating the metrics used to feed back to the client'''
 
 '''I wanted to optimize tthe portfolio using either mean variance optimization or max sharp.  I hit the size limit 
-and the scipy layer was too big to fit alongside the pandas and CCXT libraries.  The following was going to be the  
-methodology, i am leaving it in the code in case I figure out how to over come the size limit (maybe drop overlapping
-dependencies from Pandas and recompile it?) https://towardsdatascience.com/efficient-frontier-portfolio-optimisation-in-python-e7844051e7f'''
+and the scipy layer with too big to fit alongside the pandas and CCXT libraries.  The following was going to be the  
+methodology https://towardsdatascience.com/efficient-frontier-portfolio-optimisation-in-python-e7844051e7f'''
 # def portfolio_annualised_performance(W, expc_return, cov_post_estimate):
 #     returns = np.sum(expc_return*W )
 #     std = np.sqrt(np.dot(W, np.dot(cov_post_estimate, W).T))
@@ -424,82 +453,84 @@ funciton above'''
 
 
 ### Intents Handlers ###
-def make_portfolio(intent_request):
-    """
-    Performs fulfillment for recommending a portfolio.
-    """
+"""
+Performs fulfillment for recommending a portfolio.
+"""
 
-    '''Unpack the inputs from the chatbot'''
-    bday = get_slots(intent_request)["bday"]
-    amount = parse_float(get_slots(intent_request)["amount"])
-    retire =parse_float( get_slots(intent_request)["retire"])
-    risk = get_slots(intent_request)["risk"]
-    income =parse_float(get_slots(intent_request)["income"])
-    
-    
-    '''we will assess the clients risk adversion pull the csv for the crypto dataframe,
-    create their portfolio, and optimize it'''
-    client_risk=risk_assay(bday, income, amount, risk, retire)
-    coin_df=get_coins()
-    symbols=get_tickers(client_risk, coin_df)
-    coin_df.set_index('symbol', inplace=True)
-    tickers_df=get_portfolio(symbols)
-    tickers=tickers_df.columns.to_list()
+'''Unpack the inputs from the chatbot'''
+bday = get_slots(intent_request)["bday"]
+amount = parse_float(get_slots(intent_request)["amount"])
+retire =parse_float( get_slots(intent_request)["retire"])
+risk = get_slots(intent_request)["risk"]
+income =parse_float(get_slots(intent_request)["income"])
 
-    
-    
-    '''Here we start the Black Litterman model, It needs better optimization'''
-    asset_returns , S= in_return_cov(tickers_df)
-    clean_tickers, data_df, tickers_df=make_data_df(coin_df, tickers_df, asset_returns, tickers)
-    asset_returns , S= in_return_cov(tickers_df)  #realigning the dim of S and the portfolio
-    W = mkt_weights(data_df['mrkcap'])
-    A = risk_return(W,S,data_df['returns'])
-    PI = vector_equilibrium_return(S, W, data_df['returns'])
-    P, Q=make_view_matrix(clean_tickers, data_df)
-    t = 1 / len(tickers_df)
-    omega=my_omega(data_df, clean_tickers)
-    expc_return = posterior_estimate_return(t,S,P,Q,PI,omega)
-    post_cov = posterior_covariance(t,S,P,PI,omega)
-    cov_post_estimate = post_cov + S
-    
-    
-    
-    '''Here we do the portfolio optimization and package the metrics'''
-    new_weights = np.dot(np.transpose(expc_return),np.linalg.inv(A*cov_post_estimate))
-    left, port_df =make_port_df(expc_return, new_weights, clean_tickers, data_df, amount)
-    metrics=make_port_metrics(port_df, cov_post_estimate)
-    print_df=port_df.loc[port_df['shares']>0]
-    print_tickers=print_df.index.to_list()
 
-    '''Generating the output and shipping it back to the client, FULFILLED'''
-    output_message=make_output(print_df, left, amount, metrics, print_tickers)
-    
-    return close(intent_request["sessionAttributes"], "Fulfilled", output_message)
+'''we will assess the clients risk adversion pull the csv for the crypto dataframe,
+create their portfolio, and optimize it'''
+client_risk=risk_assay(bday, income, amount, risk, retire)
+coin_df=get_coins()
+symbols=get_tickers(client_risk, coin_df)
+coin_df.set_index('symbol', inplace=True)
+tickers_df=get_portfolio(symbols)
+tickers=tickers_df.columns.to_list()
+
+
+
+'''Here we start the Black Litterman model, It needs better optimization'''
+asset_returns , S= in_return_cov(tickers_df)
+clean_tickers, data_df, tickers_df=make_data_df(coin_df, tickers_df, asset_returns, tickers)
+asset_returns , S= in_return_cov(tickers_df)  #realigning the dim of S and the portfolio
+W = mkt_weights(data_df['mrkcap'])
+A = risk_return(W,S,data_df['returns'])
+PI = vector_equilibrium_return(S, W, data_df['returns'])
+P, Q=make_view_matrix(clean_tickers, data_df)
+t = 1 / len(tickers_df)
+omega=my_omega(data_df, clean_tickers)
+expc_return = posterior_estimate_return(t,S,P,Q,PI,omega)
+post_cov = posterior_covariance(t,S,P,PI,omega)
+cov_post_estimate = post_cov + S
+
+
+
+'''Here we do the portfolio optimization and package the metrics'''
+# min_opt=min_variance(expc_return, cov_post_estimate)
+new_weights = np.dot(np.transpose(expc_return),np.linalg.inv(A*cov_post_estimate))
+left, port_df =make_port_df(expc_return, new_weights, clean_tickers, data_df, amount)
+metrics=make_port_metrics(port_df, cov_post_estimate)
+print_df=port_df.loc[port_df['shares']>0]
+print_tickers=print_df.index.to_list()
+
+'''Generating the output and shipping it back to the client, FULFILLED'''
+output_message=make_output(print_df, left, amount, metrics, print_tickers)
+
+print(output_message)
+
+Lambda_response=close(intent_request["sessionAttributes"], "Fulfilled", output_message)
 
 
 
 
 ### Intents Dispatcher ###
-def dispatch(intent_request):
-    """
-    Called when the user specifies an intent for this bot.
-    """
+# def dispatch(intent_request):
+#     """
+#     Called when the user specifies an intent for this bot.
+#     """
 
-    # Get the name of the current intent
-    intent_name = intent_request["currentIntent"]["name"]
+#     # Get the name of the current intent
+#     intent_name = intent_request["currentIntent"]["name"]
 
-    # Dispatch to bot's intent handlers
-    if intent_name == "coinBot_test":
-        return make_portfolio(intent_request)
+#     # Dispatch to bot's intent handlers
+#     if intent_name == "coinBot_test":
+#         return make_portfolio(intent_request)
 
-    raise Exception("Intent with name " + intent_name + " not supported")
+#     raise Exception("Intent with name " + intent_name + " not supported")
 
 
-### Main Handler ###
-def lambda_handler(event, context):
-    """
-    Route the incoming request based on intent.
-    The JSON body of the request is provided in the event slot.
-    """
+# ### Main Handler ###
+# def lambda_handler(event, context):
+#     """
+#     Route the incoming request based on intent.
+#     The JSON body of the request is provided in the event slot.
+#     """
 
-    return dispatch(event)
+#     return dispatch(event)

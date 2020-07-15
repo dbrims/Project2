@@ -34,9 +34,9 @@ intent_request={
   "currentIntent": {
     "name": "coinBot",
     "slots": {
-      "retire": "90",
-      "income": "10000000",
-      "risk": "low",
+      "retire": "20",
+      "income": "10000",
+      "risk": "high",
       "bday": "1980-11-08",
       "amount": "1000000"
     },
@@ -180,11 +180,11 @@ def get_tickers(ave_risk, coin_df):
     portfolios'''
     tickers=[]
     if ave_risk==1:
-        symbols=coin_df['symbol'].loc[(coin_df['class']==2)|(coin_df['class']==0)].to_list()
+        symbols=coin_df['ticker'].loc[(coin_df['Class']==1)].to_list()
     elif ave_risk==2:
-        symbols=coin_df['symbol'].to_list()
+        symbols=coin_df['ticker'].to_list()
     elif ave_risk==3:
-        symbols=coin_df['symbol'].loc[(coin_df['class']==1)|(coin_df['class']==0)].to_list()
+        symbols=coin_df['ticker'].loc[(coin_df['Class']==0)].to_list()
  
     return(symbols)
 
@@ -215,7 +215,7 @@ def fill_data_df(coin_df,data_df, tickers_df, tickers):
     for ticker in tickers:
         data_df.loc[ticker,'SD']=SD.loc[ticker]
         data_df.loc[ticker,'ann_ret']=rets.loc[ticker]        
-        data_df.loc[ticker,'mrkcap']=coin_df.loc[ticker,'Market_Cap']
+        data_df.loc[ticker,'mrkcap']=coin_df.loc[ticker,'market_cap']
         data_df.loc[ticker,'price']=last_price.loc[ticker]
     data_df.dropna(inplace=True)
     clean_tickers=data_df.index.to_list()
@@ -235,6 +235,7 @@ def make_port_df(expc_return, new_weights, clean_tickers, data_df, amount):
     port_df=port_df.where(port_df > 0, 0)
     port_df['wts']=port_df['wts']/(port_df['wts'].sum())
     port_df['exp_return']=0
+    port_df['ann_ret']=0
     port_df['shares']=0
     port_df['value']=0
     
@@ -245,7 +246,8 @@ def make_port_df(expc_return, new_weights, clean_tickers, data_df, amount):
 def fill_port_df(expc_return, port_df, clean_tickers, data_df, amount):
     port_df['price']=data_df['price']
     port_df['exp_return']=expc_return
-    port_df['port_ret']=port_df['exp_return']*port_df['wts']
+    port_df['ann_ret']=data_df['ann_ret']
+    port_df['port_ret']=port_df['ann_ret']*port_df['wts']
     for ticker in clean_tickers:
         port_df.loc[ticker,'shares']=(amount*port_df.loc[ticker, 'wts']//port_df.loc[ticker, 'price'])
         port_df.loc[ticker,'value']=(port_df.loc[ticker, 'shares']*port_df.loc[ticker, 'price'])  
@@ -419,7 +421,7 @@ def make_output (print_df, left, amount, metrics, print_tickers):
         out_str=(f'''For your ${amount} investment, we have calculated the most afficient portfolio for your level of risk will be
         {port_str[:-3]} 
         and you will have ${left:.2f} leftover.
-        This portfolio has a current annualized return of {metrics[0]*100:.2f}%, voluntility of {metrics[2]:.2f}, and a sharp raio of {metrics[1]:.2f}
+        This portfolio has a current annualized return of {metrics[0]*100:.2f}%, volatility of {metrics[2]*100:.1f}%, and a sharp raio of {metrics[1]:.2f}
         Thank you for using the HAL3000 coinBot, Have a good day, Dave!''')
         
     else:
@@ -470,7 +472,7 @@ create their portfolio, and optimize it'''
 client_risk=risk_assay(bday, income, amount, risk, retire)
 coin_df=get_coins()
 symbols=get_tickers(client_risk, coin_df)
-coin_df.set_index('symbol', inplace=True)
+coin_df.set_index('ticker', inplace=True)
 tickers_df=get_portfolio(symbols)
 tickers=tickers_df.columns.to_list()
 
@@ -487,6 +489,8 @@ P, Q=make_view_matrix(clean_tickers, data_df)
 t = 1 / len(tickers_df)
 omega=my_omega(data_df, clean_tickers)
 expc_return = posterior_estimate_return(t,S,P,Q,PI,omega)
+
+
 post_cov = posterior_covariance(t,S,P,PI,omega)
 cov_post_estimate = post_cov + S
 

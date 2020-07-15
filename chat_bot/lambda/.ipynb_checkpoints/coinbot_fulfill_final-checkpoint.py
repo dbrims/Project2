@@ -150,11 +150,11 @@ def get_tickers(ave_risk, coin_df):
     portfolios'''
     tickers=[]
     if ave_risk==1:
-        symbols=coin_df['symbol'].loc[(coin_df['class']==2)|(coin_df['class']==0)].to_list()
+        symbols=coin_df['ticker'].loc[(coin_df['Class']==1)].to_list()
     elif ave_risk==2:
-        symbols=coin_df['symbol'].to_list()
+        symbols=coin_df['ticker'].to_list()
     elif ave_risk==3:
-        symbols=coin_df['symbol'].loc[(coin_df['class']==1)|(coin_df['class']==0)].to_list()
+        symbols=coin_df['ticker'].loc[(coin_df['Class']==0)].to_list()
  
     return(symbols)
 
@@ -185,7 +185,7 @@ def fill_data_df(coin_df,data_df, tickers_df, tickers):
     for ticker in tickers:
         data_df.loc[ticker,'SD']=SD.loc[ticker]
         data_df.loc[ticker,'ann_ret']=rets.loc[ticker]        
-        data_df.loc[ticker,'mrkcap']=coin_df.loc[ticker,'Market_Cap']
+        data_df.loc[ticker,'mrkcap']=coin_df.loc[ticker,'market_cap']
         data_df.loc[ticker,'price']=last_price.loc[ticker]
     data_df.dropna(inplace=True)
     clean_tickers=data_df.index.to_list()
@@ -205,6 +205,7 @@ def make_port_df(expc_return, new_weights, clean_tickers, data_df, amount):
     port_df=port_df.where(port_df > 0, 0)
     port_df['wts']=port_df['wts']/(port_df['wts'].sum())
     port_df['exp_return']=0
+    port_df['ann_ret']=0
     port_df['shares']=0
     port_df['value']=0
     
@@ -215,7 +216,8 @@ def make_port_df(expc_return, new_weights, clean_tickers, data_df, amount):
 def fill_port_df(expc_return, port_df, clean_tickers, data_df, amount):
     port_df['price']=data_df['price']
     port_df['exp_return']=expc_return
-    port_df['port_ret']=port_df['exp_return']*port_df['wts']
+    port_df['ann_ret']=data_df['ann_ret']
+    port_df['port_ret']=port_df['ann_ret']*port_df['wts']
     for ticker in clean_tickers:
         port_df.loc[ticker,'shares']=(amount*port_df.loc[ticker, 'wts']//port_df.loc[ticker, 'price'])
         port_df.loc[ticker,'value']=(port_df.loc[ticker, 'shares']*port_df.loc[ticker, 'price'])  
@@ -335,9 +337,8 @@ def posterior_covariance(t,S,P,PI,omega):
 I am also generating the metrics used to feed back to the client'''
 
 '''I wanted to optimize tthe portfolio using either mean variance optimization or max sharp.  I hit the size limit 
-and the scipy layer was too big to fit alongside the pandas and CCXT libraries.  The following was going to be the  
-methodology, i am leaving it in the code in case I figure out how to over come the size limit (maybe drop overlapping
-dependencies from Pandas and recompile it?) https://towardsdatascience.com/efficient-frontier-portfolio-optimisation-in-python-e7844051e7f'''
+and the scipy layer with too big to fit alongside the pandas and CCXT libraries.  The following was going to be the  
+methodology https://towardsdatascience.com/efficient-frontier-portfolio-optimisation-in-python-e7844051e7f'''
 # def portfolio_annualised_performance(W, expc_return, cov_post_estimate):
 #     returns = np.sum(expc_return*W )
 #     std = np.sqrt(np.dot(W, np.dot(cov_post_estimate, W).T))
@@ -390,7 +391,7 @@ def make_output (print_df, left, amount, metrics, print_tickers):
         out_str=(f'''For your ${amount} investment, we have calculated the most afficient portfolio for your level of risk will be
         {port_str[:-3]} 
         and you will have ${left:.2f} leftover.
-        This portfolio has a current annualized return of {metrics[0]*100:.2f}%, voluntility of {metrics[2]:.2f}, and a sharp raio of {metrics[1]:.2f}
+        This portfolio has a current annualized return of {metrics[0]*100:.2f}%, volatility of {metrics[2]*100:.1f}%, and a sharp raio of {metrics[1]:.2f}
         Thank you for using the HAL3000 coinBot, Have a good day, Dave!''')
         
     else:
@@ -418,6 +419,7 @@ def close(session_attributes, fulfillment_state, message):
     }
     return response
 
+
 #########
 '''here is the main body of the lambda function which is calling all the 
 funciton above'''
@@ -442,7 +444,7 @@ def make_portfolio(intent_request):
     client_risk=risk_assay(bday, income, amount, risk, retire)
     coin_df=get_coins()
     symbols=get_tickers(client_risk, coin_df)
-    coin_df.set_index('symbol', inplace=True)
+    coin_df.set_index('ticker', inplace=True)
     tickers_df=get_portfolio(symbols)
     tickers=tickers_df.columns.to_list()
 

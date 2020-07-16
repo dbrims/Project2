@@ -35,7 +35,7 @@
 
 * We tested other clustering algorithms such as K-means and ran them with and without PCA.
 
-![alt text](Clustering Crytocurrencies Using K means (PCA).png)
+![alt text](Project2/Clustering Crytocurrencies Using K means (PCA).png)
 
 * We then trained an SVM on the data using the cluster class as our label, to allow for easy assignment of new cryptocurrencies into our universe as they come online, rather than having to rerun the entire clustering.  
 

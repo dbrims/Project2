@@ -48,11 +48,11 @@
 * The lambda function connects with the free Kraken API and the CSV file. It then retrieves the clustering results with the risk scores and the historical data.
 
 * The Chatbot requests the following inputs from the clients:
-- Age (Birthday)
-- Retirement age
-- Income
-- Investment amount
-- Risk aversion
+    - Age (Birthday)
+    - Retirement age
+    - Income
+    - Investment amount
+    - Risk aversion
 
 * Based on clients’ inputs, the Chatbot assigns a risk score. This risk score will result in a specific crypto portfolio obtained from our classification analysis and portfolio optimization model.
 

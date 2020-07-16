@@ -25,13 +25,17 @@
     - Standard Deviation
     - Sharpe Ratio
     
-* The above-mentioned features were reduced to 2 Principal Components and the data was ready for the Spectral clustering algorithm and the SVM.
+* The above-mentioned features were reduced to 3 Principal Components and the data was ready for the Spectral clustering algorithm and the SVM.
 
 ## Model Evaluation & Training
 
 * In order to assign a risk ranking to the cryptocurrencies, the first step was to cluster them into comprehensive groups where we could visualize their key attributes and determine a risk score for each group.
 
 * We decided to us Spectral clustering as the affinity, and not the absolute location, determines what points fall under which cluster. This was particularly useful because our data formed complicated shapes.
+
+* We tested other clustering algorithms such as K-means and ran them with and without PCA.
+
+![alt text](Clustering Crytocurrencies Using K means (PCA).png)
 
 * We then trained an SVM on the data using the cluster class as our label, to allow for easy assignment of new cryptocurrencies into our universe as they come online, rather than having to rerun the entire clustering.  
 

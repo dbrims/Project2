@@ -38,11 +38,17 @@
 * We then trained an SVM on the data using the cluster class as our label, to allow for easy assignment of new cryptocurrencies into our universe as they come online, rather than having to rerun the entire clustering.  
 
 * The clustering was visually evaluated, comparing PCA vs raw data as inputs with the K-means and Spectral methods, to determine which gave us the most satisfactory risk ranking.
-Spectral Clustering with PCA
+
+    - Spectral Clustering with PCA
+
 ![alt text](Spectral_Clustering(PCA).png)
-Spectral Clustering witout PCA
+
+    - Spectral Clustering witout PCA
+
 ![alt text](Spectral_Clustering_No_PCA.png)
-K Means Clustering with PCA
+
+    - K Means Clustering with PCA
+    
 ![alt text](Clustering_K_means(PCA).png)
 
 * Lastly, our portfolio optimization model determines the best crypto allocation for the different portfolios which will be assigned to our clients based on their risk profiles.

@@ -35,7 +35,7 @@
 
 * We tested other clustering algorithms such as K-means and ran them with and without PCA.
 
-![alt text](Spectral Clustering_No PCA_3Features.png)
+![alt text]()
 
 * We then trained an SVM on the data using the cluster class as our label, to allow for easy assignment of new cryptocurrencies into our universe as they come online, rather than having to rerun the entire clustering.  
 
@@ -61,3 +61,6 @@
 * Based on clients’ inputs, the Chatbot assigns a risk score. This risk score will result in a specific crypto portfolio obtained from our classification analysis and portfolio optimization model.
 
 * Finally, the Chatbot provides additional information (returns, weights, etc.) regarding the assigned portfolio.
+
+## Project Slides & Video
+https://docs.google.com/presentation/d/1-us-9DCNJS6rHbjeXjF_qEYnYJfelcVdhAOizfgPVA4/edit?usp=sharing

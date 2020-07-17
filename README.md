@@ -39,6 +39,8 @@
 
 * The clustering was visually evaluated, comparing PCA vs raw data as inputs with the K-means and Spectral methods, to determine which gave us the most satisfactory risk ranking.
 
+![alt text](Clustering_K_means(PCA).png)
+
 * Lastly, our portfolio optimization model determines the best crypto allocation for the different portfolios which will be assigned to our clients based on their risk profiles.
 
 * The resulting newly labeled data was fed into an SVM, using random oversampling, and the confusion matrix was used to evaluate the model’s predictive efficiency (hint: N was too small for robust training).

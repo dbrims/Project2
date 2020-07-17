@@ -39,15 +39,15 @@
 
 * The clustering was visually evaluated, comparing PCA vs raw data as inputs with the K-means and Spectral methods, to determine which gave us the most satisfactory risk ranking.
 
-    - Spectral Clustering with PCA
+   - Spectral Clustering with PCA
 
 ![alt text](Spectral_Clustering(PCA).png)
 
-    - Spectral Clustering witout PCA
+   - Spectral Clustering witout PCA
 
 ![alt text](Spectral_Clustering_No_PCA.png)
 
-    - K Means Clustering with PCA
+   - K Means Clustering with PCA
     
 ![alt text](Clustering_K_means(PCA).png)
 

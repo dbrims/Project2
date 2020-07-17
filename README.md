@@ -35,8 +35,6 @@
 
 * We tested other clustering algorithms such as K-means and ran them with and without PCA.
 
-![alt text]()
-
 * We then trained an SVM on the data using the cluster class as our label, to allow for easy assignment of new cryptocurrencies into our universe as they come online, rather than having to rerun the entire clustering.  
 
 * The clustering was visually evaluated, comparing PCA vs raw data as inputs with the K-means and Spectral methods, to determine which gave us the most satisfactory risk ranking.
